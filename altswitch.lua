@@ -1,7 +1,7 @@
 -- Windows-style ALT+TAB for Hyprland: cycle every window on every workspace,
--- most recently used first. Hold ALT, tap TAB to move down the list, release
--- ALT to jump to the highlighted window. ALT+SHIFT+TAB moves back up, ESCAPE
--- cancels.
+-- most recently used first. Hold ALT, tap TAB or J to move down the list,
+-- release ALT to jump to the highlighted window. ALT+SHIFT+TAB or ALT+K
+-- moves back up, ESCAPE cancels.
 --
 -- Load it from ~/.config/hypr/bindings.lua:
 --
@@ -133,7 +133,9 @@ _G.__altswitch_cancel = altswitch_teardown
 hl.unbind("ALT + TAB")
 hl.unbind("ALT + SHIFT + TAB")
 hl.bind("ALT + TAB", function() altswitch_step(1) end, { description = "Switch window" })
+hl.bind("ALT + J", function() altswitch_step(1) end, { description = "Switch window" })
 hl.bind("ALT + SHIFT + TAB", function() altswitch_step(-1) end, { description = "Switch window (reverse)" })
+hl.bind("ALT + K", function() altswitch_step(-1) end, { description = "Switch window (reverse)" })
 hl.bind("ALT + ESCAPE", altswitch_teardown, { non_consuming = true, description = "Cancel window switch" })
 
 -- Committing on ALT release cannot be a keybind. A release bind on a modifier

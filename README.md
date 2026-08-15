@@ -3,8 +3,8 @@
 Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles every
 window on every workspace, ordered by most recently used.
 
-Hold `ALT`, tap `TAB` to move down the list, release `ALT` to jump to the
-highlighted window.
+Hold `ALT`, tap `TAB` or `J` to move down the list, release `ALT` to jump to
+the highlighted window.
 
 ![Preview](preview.png)
 
@@ -12,9 +12,9 @@ highlighted window.
 
 | Keys | Action |
 | --- | --- |
-| `ALT`+`TAB` | Open the switcher and select the previous window |
-| `ALT`+`TAB` again, `ALT` still held | Move one further down the list |
-| `ALT`+`SHIFT`+`TAB` | Move back up the list |
+| `ALT`+`TAB` or `ALT`+`J` | Open the switcher and select the previous window |
+| `ALT`+`TAB` or `ALT`+`J` again, `ALT` still held | Move one further down the list |
+| `ALT`+`SHIFT`+`TAB` or `ALT`+`K` | Move back up the list |
 | Release `ALT` | Switch to the highlighted window |
 | `ALT`+`ESCAPE` | Cancel without switching |
 
