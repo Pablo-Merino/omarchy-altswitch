@@ -4,7 +4,7 @@
   "name": "Alt-tab switcher",
   "version": "1.0.0",
   "author": "Pablo Merino",
-  "description": "Windows-style ALT+TAB window switcher across every workspace, ordered by most recently used.",
+  "description": "ALT+TAB or SUPER+TAB window switcher across every workspace, ordered by most recently used.",
   "kinds": [
     "panel"
   ],

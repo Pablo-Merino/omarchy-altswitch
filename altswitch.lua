@@ -1,11 +1,14 @@
--- Windows-style ALT+TAB for Hyprland: cycle every window on every workspace,
--- most recently used first. Hold ALT, tap TAB to move down the list, release
--- ALT to jump to the highlighted window. ALT+SHIFT+TAB moves back up, ESCAPE
--- cancels.
+-- ALT+TAB or SUPER+TAB switcher for Hyprland: cycle every window on every
+-- workspace, most recently used first. Hold the selected modifier, tap TAB to
+-- move down the list, and release the modifier to jump to the highlighted
+-- window. Modifier+SHIFT+TAB moves back up and modifier+ESCAPE cancels.
 --
 -- Load it from ~/.config/hypr/bindings.lua:
 --
 --   dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.altswitch/altswitch.lua")
+--
+-- The modifier originates in this plugin's shell.json entry and is projected
+-- into Lua state by AltSwitch.qml. See the README for supported values.
 --
 -- This half owns all the state and all the keys. The list is drawn by the
 -- companion shell plugin, which renders what it is told and nothing else.
@@ -16,13 +19,48 @@
 --   * Selection is virtual. Focus moves once, on commit. Focusing on every tap
 --     would drag you across workspaces on the way past.
 
-local altswitch = { windows = {}, index = 1, active = false }
+local DEFAULT_MODIFIER = "ALT"
+local known_modifier_keycodes = {
+  ALT = { 64, 108 },
+  SUPER = { 133, 134 },
+}
+
+local function altswitch_modifier()
+  local home = os.getenv("HOME")
+  if not home or home == "" then
+    return DEFAULT_MODIFIER
+  end
+
+  -- AltSwitch.qml projects its shell.json setting into this generated Lua
+  -- state file. pcall keeps ALT working on first start, before the shell has
+  -- created it, and if a partial or hand-edited file is ever encountered.
+  local ok, config = pcall(
+    dofile,
+    home .. "/.local/state/omarchy/io.github.pablo-merino.altswitch.lua"
+  )
+  if not ok or type(config) ~= "table" or type(config.modifier) ~= "string" then
+    return DEFAULT_MODIFIER
+  end
+
+  local modifier = config.modifier:upper()
+  return known_modifier_keycodes[modifier] and modifier or DEFAULT_MODIFIER
+end
 
 -- Single-quote a string for the shell. Omarchy's config helpers provide this,
 -- but this file also has to work without them.
 local function shell_quote(value)
   return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
 end
+
+local modifier = altswitch_modifier()
+local configured_keycodes = known_modifier_keycodes[modifier]
+
+local modifier_keycodes = {}
+for _, keycode in ipairs(configured_keycodes) do
+  modifier_keycodes[keycode] = true
+end
+
+local altswitch = { windows = {}, index = 1, active = false }
 
 local function altswitch_send(method, argument)
   local command = "omarchy-shell -q altswitch " .. method
@@ -68,7 +106,7 @@ end
 
 local function altswitch_commit()
   if not altswitch.active then
-    return -- nothing in flight; the Alt release fires on every switch-less tap
+    return -- nothing in flight; modifier releases also happen outside a switch
   end
 
   -- Read the address before tearing down. Teardown drops the snapshot, and the
@@ -123,30 +161,34 @@ local function altswitch_step(delta)
   altswitch_send("show", altswitch_payload())
 end
 
--- Self-heal hook for the panel. If the ALT release is ever missed, the panel
--- gives up on its own after a few seconds and calls this, so the two halves
--- cannot disagree about whether a switch is still in progress.
+-- Self-heal hook for the panel. If the modifier release is ever missed, the
+-- panel gives up on its own after a few seconds and calls this, so the two
+-- halves cannot disagree about whether a switch is still in progress.
 _G.__altswitch_cancel = altswitch_teardown
 
--- Omarchy binds ALT+TAB four times by default (cyclenext and bring_to_top, in
--- both directions), so both chords are cleared before rebinding.
-hl.unbind("ALT + TAB")
-hl.unbind("ALT + SHIFT + TAB")
-hl.bind("ALT + TAB", function() altswitch_step(1) end, { description = "Switch window" })
-hl.bind("ALT + SHIFT + TAB", function() altswitch_step(-1) end, { description = "Switch window (reverse)" })
-hl.bind("ALT + ESCAPE", altswitch_teardown, { non_consuming = true, description = "Cancel window switch" })
+local forward_chord = modifier .. " + TAB"
+local reverse_chord = modifier .. " + SHIFT + TAB"
+local cancel_chord = modifier .. " + ESCAPE"
 
--- Committing on ALT release cannot be a keybind. A release bind on a modifier
--- only fires when that modifier is tapped on its own; pressing TAB in between
--- cancels it, which is exactly what every switch does. So the raw key stream is
--- read instead, where the release always shows up.
+-- Clear the selected chords before binding the switcher. This also replaces
+-- Omarchy's default ALT+TAB bindings when the default modifier is used.
+hl.unbind(forward_chord)
+hl.unbind(reverse_chord)
+hl.unbind(cancel_chord)
+hl.bind(forward_chord, function() altswitch_step(1) end, { description = "Switch window" })
+hl.bind(reverse_chord, function() altswitch_step(-1) end, { description = "Switch window (reverse)" })
+hl.bind(cancel_chord, altswitch_teardown, { non_consuming = true, description = "Cancel window switch" })
+
+-- Committing on modifier release cannot be a keybind. A release bind on a
+-- modifier only fires when that modifier is tapped on its own; pressing TAB in
+-- between cancels it, which is exactly what every switch does. So the raw key
+-- stream is read instead, where the release always shows up.
 --
--- 64 is Alt_L and 108 is Alt_R. This runs for every keystroke on the system, so
--- it stays down to two integer compares and a boolean unless a switch is up.
-local ALT_KEYCODES = { [64] = true, [108] = true }
+-- This runs for every keystroke on the system, so the configured keycodes are
+-- normalized into a lookup table once when this file is loaded.
 
 hl.on("input.keyboard.key", function(keycode, _, state)
-  if state == 0 and altswitch.active and ALT_KEYCODES[keycode] then
+  if state == 0 and altswitch.active and modifier_keycodes[keycode] then
     altswitch_commit()
   end
 end)

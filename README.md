@@ -1,7 +1,8 @@
 # Alt-tab switcher
 
-Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles every
-window on every workspace, ordered by most recently used.
+Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/), with
+`SUPER`+`TAB` (Cmd+Tab) as an alternative. Cycles every window on every
+workspace, ordered by most recently used.
 
 Hold `ALT`, tap `TAB` to move down the list, release `ALT` to jump to the
 highlighted window.
@@ -23,8 +24,8 @@ Two things make this behave like Windows rather than like Hyprland's
 
 - The window list is snapshotted when the switch starts and then frozen, so the
   order cannot shuffle underneath you while you tab through it.
-- Selection is virtual. Focus moves once, when you release `ALT`. Focusing on
-  every tap would drag you across workspaces on the way past.
+- Selection is virtual. Focus moves once, when you release the modifier.
+  Focusing on every tap would drag you across workspaces on the way past.
 
 Special and scratchpad workspaces are excluded. Every monitor is included.
 
@@ -51,11 +52,28 @@ dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.alt
 
 Apply it with `hyprctl reload`.
 
-That line replaces Omarchy's four default `ALT`+`TAB` bindings (`cyclenext` and
-`bring_to_top`, in both directions). It unbinds them itself, so no other edit is
-needed.
+By default, that line replaces Omarchy's four `ALT`+`TAB` bindings (`cyclenext`
+and `bring_to_top`, in both directions). If you select `SUPER`, it binds the
+switcher to `SUPER`+`TAB` instead.
 
 ## Settings
+
+### Keyboard
+
+`ALT` is the default modifier. Change the switcher to `SUPER`+`TAB` (Cmd+Tab)
+with:
+
+```bash
+omarchy-shell altswitch set modifier SUPER
+```
+
+The modifier setting accepts only `ALT` and `SUPER`, case-insensitively. The
+command persists the setting beside `showIcons` in the plugin's `shell.json`
+entry. The shell projects it into generated Lua state and reloads Hyprland so
+the new bindings take effect. The selected modifier controls all three chords:
+`TAB`, `SHIFT`+`TAB`, and `ESCAPE`.
+
+### Application icons
 
 Application icons are shown by default. Hide them with:
 
@@ -65,16 +83,24 @@ omarchy-shell altswitch set showIcons false
 
 | Command | Effect |
 | --- | --- |
+| `omarchy-shell altswitch set modifier ALT` | Use `ALT`+`TAB` |
+| `omarchy-shell altswitch set modifier SUPER` | Use `SUPER`+`TAB` |
 | `omarchy-shell altswitch set showIcons true` | Show application icons |
 | `omarchy-shell altswitch set showIcons false` | Hide application icons |
 
-Changes apply immediately and persist in the plugin's entry in
-`~/.config/omarchy/shell.json`.
+Changes persist in the plugin's entry in `~/.config/omarchy/shell.json`.
+Application icon changes apply immediately; modifier changes reload Hyprland.
+The generated `~/.local/state/omarchy/io.github.pablo-merino.altswitch.lua`
+bridges the modifier into Hyprland and should not be edited directly.
 
 The equivalent manual setting is:
 
 ```json
-{ "id": "io.github.pablo-merino.altswitch", "showIcons": true }
+{
+  "id": "io.github.pablo-merino.altswitch",
+  "modifier": "SUPER",
+  "showIcons": true
+}
 ```
 
 ## Remove
@@ -99,11 +125,11 @@ show|select|hide`.
 
 `AltSwitch.qml` runs inside `omarchy-shell` and only draws the list. It takes no
 keyboard focus, so it cannot trap your keyboard, and it hides itself after ten
-seconds if an `ALT` release is ever missed.
+seconds if a modifier release is ever missed.
 
 Two Hyprland details are worth knowing if you plan to modify this:
 
-- Committing on `ALT` release cannot be a keybind. A release bind on a modifier
+- Committing on modifier release cannot be a keybind. A release bind on a modifier
   only fires when that modifier is tapped alone; pressing `TAB` in between
   cancels it. The raw `input.keyboard.key` event stream is read instead.
 - Focusing a window from inside a key callback updates Hyprland's active window
