@@ -3,8 +3,8 @@
 Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles every
 window on every workspace, ordered by most recently used.
 
-Hold `ALT`, tap `TAB` to move down the list, release `ALT` to jump to the
-highlighted window.
+Hold `ALT`, then use `TAB`, `DOWN`, or `UP` to move through the list. Release
+`ALT` to jump to the highlighted window.
 
 ![Preview](preview.png)
 
@@ -15,6 +15,8 @@ highlighted window.
 | `ALT`+`TAB` | Open the switcher and select the previous window |
 | `ALT`+`TAB` again, `ALT` still held | Move one further down the list |
 | `ALT`+`SHIFT`+`TAB` | Move back up the list |
+| `ALT`+`DOWN` | Move down the list |
+| `ALT`+`UP` | Move up the list |
 | Release `ALT` | Switch to the highlighted window |
 | `ALT`+`ESCAPE` | Cancel without switching |
 
@@ -52,8 +54,8 @@ dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.alt
 Apply it with `hyprctl reload`.
 
 That line replaces Omarchy's four default `ALT`+`TAB` bindings (`cyclenext` and
-`bring_to_top`, in both directions). It unbinds them itself, so no other edit is
-needed.
+`bring_to_top`, in both directions) and registers `ALT`+`UP` and `ALT`+`DOWN`.
+It unbinds the default tab bindings itself, so no other edit is needed.
 
 ## Settings
 
@@ -109,6 +111,18 @@ Two Hyprland details are worth knowing if you plan to modify this:
 - Focusing a window from inside a key callback updates Hyprland's active window
   but does not settle until the next input event, so the focus dispatch is sent
   through `hyprctl` from outside that callback.
+
+## Testing
+
+Run the self-contained navigation regression with Lua:
+
+```bash
+lua tests/arrow-navigation.lua altswitch.lua
+```
+
+The real-session scenario in `tests/lab/up-down-navigation.sh` installs the
+candidate in a disposable Omarchy desktop, sends `ALT`+`DOWN` and `ALT`+`UP`
+through its virtual keyboard, and verifies the focused window after each key.
 
 ## Known limitations
 
