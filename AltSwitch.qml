@@ -32,12 +32,34 @@ Item {
   property int selectedIndex: 0
 
   readonly property string pluginId: String((manifest && manifest.id) || "io.github.pablo-merino.altswitch")
+  FileView {
+    id: userShellConfig
+    // Omarchy 4.0.3 hands panels a scoped shell facade without shellConfig,
+    // so read the canonical user file directly when the host does not hand
+    // the config object over.
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: root.pluginEntryRevision++
+  }
+  property int pluginEntryRevision: 0
   readonly property var pluginEntry: {
-    const config = shell ? shell.shellConfig : null
-    const plugins = config && Array.isArray(config.plugins) ? config.plugins : []
-    for (let i = 0; i < plugins.length; i++) {
-      const entry = plugins[i]
-      if (entry && entry.id === root.pluginId) return entry
+    const revision = root.pluginEntryRevision  // binding dependency: user file reloads
+    var plugins = shell && shell.shellConfig && Array.isArray(shell.shellConfig.plugins)
+      ? shell.shellConfig.plugins : null
+    if (!Array.isArray(plugins)) {
+      try {
+        const parsed = JSON.parse(String(userShellConfig.text() || "{}"))
+        plugins = parsed && Array.isArray(parsed.plugins) ? parsed.plugins : null
+      } catch (e) {
+        plugins = null
+      }
+    }
+    if (Array.isArray(plugins)) {
+      for (let i = 0; i < plugins.length; i++) {
+        const entry = plugins[i]
+        if (entry && entry.id === root.pluginId) return entry
+      }
     }
     return ({})
   }
