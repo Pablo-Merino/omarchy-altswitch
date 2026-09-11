@@ -1,4 +1,7 @@
-// Windows-style ALT+TAB window list.
+// ALT+TAB switcher. Two appearances:
+//   * "list" (default) - the original list card (upstream appearance).
+//   * "bar"            - a macOS-style horizontal bar of window icons with the
+//                        selected window's title beneath it.
 //
 // This is the display half only. All key handling and all state live in
 // altswitch.lua next to this file, loaded from the Hyprland config. It owns the
@@ -32,40 +35,140 @@ Item {
   property int selectedIndex: 0
 
   readonly property string pluginId: String((manifest && manifest.id) || "io.github.pablo-merino.altswitch")
+
+  // Third-party plugins get a capability-scoped shell facade that does not
+  // expose the shell config, so read our own entry from shell.json directly.
+  // The shell persists `omarchy-shell altswitch set ...` there, and the file is
+  // watched, so changes apply without a restart.
+  property string shellConfigText: ""
   readonly property var pluginEntry: {
-    const config = shell ? shell.shellConfig : null
-    const plugins = config && Array.isArray(config.plugins) ? config.plugins : []
-    for (let i = 0; i < plugins.length; i++) {
-      const entry = plugins[i]
-      if (entry && entry.id === root.pluginId) return entry
+    try {
+      const config = JSON.parse(root.shellConfigText || "{}")
+      const plugins = config && Array.isArray(config.plugins) ? config.plugins : []
+      for (let i = 0; i < plugins.length; i++) {
+        const entry = plugins[i]
+        if (entry && entry.id === root.pluginId) return entry
+      }
+    } catch (error) {
+      return ({})
     }
     return ({})
   }
+
+  FileView {
+    id: shellConfigFile
+
+    path: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.shellConfigText = text()
+    onFileChanged: reload()
+  }
+
+  // Appearance. "list" is the original list card; "bar" is the macOS-style
+  // icon bar. Defaults to "list" so the plugin matches upstream unless the user
+  // opts in with:
+  //
+  //   "style": "bar"
+  readonly property string style: {
+    const value = String(pluginEntry.style || "list").trim().toLowerCase()
+    return value === "bar" ? "bar" : "list"
+  }
+
+  // Optional user-defined icon overrides. Windows whose class has no desktop
+  // entry (or the wrong icon) can be mapped to a specific icon here, from the
+  // plugin entry in shell.json:
+  //
+  //   "iconOverrides": [
+  //     { "appClass": "org.quickshell", "title": "Radio Atlas",
+  //       "icon": "~/.config/quickshell/radio-atlas/radio.svg" }
+  //   ]
+  //
+  // `appClass` is required and matched exactly. `title` is optional; when it is
+  // present the window title must match it exactly too. `icon` may be an icon
+  // name from the active theme, an absolute path, a ~/ path, or a file:// URL.
+  readonly property var iconOverrides: Array.isArray(pluginEntry.iconOverrides) ? pluginEntry.iconOverrides : []
+
+  // List style: draw the per-row application icon (upstream `showIcons`).
   readonly property bool showIcons: pluginEntry.showIcons !== false
 
+  // List style geometry (unchanged from upstream).
   readonly property int rowHeight: Math.max(Style.space(34), Style.font.body + Style.spacing.controlPaddingY * 2)
   readonly property int cardWidth: Math.min(Style.space(560), panel.width - Style.gapsOut * 2)
   readonly property int maxCardHeight: panel.height - Style.gapsOut * 2
 
+  readonly property var selectedWindow: root.windows.length > 0
+    ? root.windows[Math.max(0, Math.min(root.selectedIndex, root.windows.length - 1))]
+    : null
+  readonly property string selectedTitle: {
+    if (!root.selectedWindow) return ""
+    const title = String(root.selectedWindow.title || "").trim()
+    return title.length > 0 ? title : root.friendlyAppName(root.selectedWindow.appClass)
+  }
+
+  // Bar style geometry (mirrors the Caelestia AltSwitch rework).
+  readonly property int iconSize: Style.space(48)
+  readonly property int cellSize: Style.space(64)
+  readonly property int cellGap: Style.space(6)
+  readonly property int cellRadius: Style.space(16)
+  readonly property int barPadding: Style.space(12)
+  readonly property int barHeight: cellSize + barPadding * 2
+  readonly property int barRadius: Style.space(22)
+  readonly property int titleGap: Style.space(16)
+  readonly property int maxBarWidth: Math.max(cellSize, panel.width - Style.space(48))
+  readonly property int desiredBarWidth: root.windows.length > 0
+    ? root.windows.length * cellSize + (root.windows.length - 1) * cellGap + barPadding * 2
+    : 0
+  readonly property int barWidth: Math.min(desiredBarWidth, maxBarWidth)
+
   function updatePluginSetting(name, value) {
     if (!shell || typeof shell.updateEntryInline !== "function") return false
 
+    // Round-trip through JSON so nested values become plain JS values. Iterating
+    // the plugin entry directly can miss keys, and the shell replaces the whole
+    // entry with the object we pass back, so a missed key would be dropped.
+    let current
+    try {
+      current = JSON.parse(JSON.stringify(root.pluginEntry || {}))
+    } catch (error) {
+      current = {}
+    }
     const next = ({})
-    for (const key in root.pluginEntry) if (key !== "id") next[key] = root.pluginEntry[key]
+    for (const key in current) if (key !== "id") next[key] = current[key]
     next[name] = value
     shell.updateEntryInline(root.pluginId, next)
     return true
   }
 
   function setPluginSetting(name, rawValue) {
-    if (name !== "showIcons") return "unknown setting: " + name
+    if (name === "style") {
+      const style = String(rawValue || "").trim().toLowerCase()
+      if (style !== "list" && style !== "bar") return "style must be list or bar"
+      if (!root.updatePluginSetting(name, style)) return "unavailable"
+      return style
+    }
 
-    const value = String(rawValue || "").trim().toLowerCase()
-    if (value !== "true" && value !== "false") return "showIcons must be true or false"
+    if (name === "showIcons") {
+      const value = String(rawValue || "").trim().toLowerCase()
+      if (value !== "true" && value !== "false") return "showIcons must be true or false"
+      const enabled = value === "true"
+      if (!root.updatePluginSetting(name, enabled)) return "unavailable"
+      return String(enabled)
+    }
 
-    const enabled = value === "true"
-    if (!root.updatePluginSetting(name, enabled)) return "unavailable"
-    return String(enabled)
+    if (name === "iconOverrides") {
+      let parsed
+      try {
+        parsed = JSON.parse(String(rawValue || "[]"))
+      } catch (error) {
+        return "iconOverrides must be a JSON array"
+      }
+      if (!Array.isArray(parsed)) return "iconOverrides must be a JSON array"
+      if (!root.updatePluginSetting(name, parsed)) return "unavailable"
+      return "ok"
+    }
+
+    return "unknown setting: " + name
   }
 
   function friendlyAppName(appClass) {
@@ -83,8 +186,36 @@ Item {
     return name.replace(/(^|\s)\S/g, function(letter) { return letter.toUpperCase() })
   }
 
-  function appIcon(appClass) {
-    const raw = String(appClass || "").trim()
+  // Turn an override icon value into a QML image source. Theme icon names go
+  // through Quickshell.iconPath; paths and file:// URLs are used directly.
+  function resolveIconSource(icon) {
+    const value = String(icon || "").trim()
+    if (!value) return ""
+    if (value.indexOf("file://") === 0 || value.indexOf("image://") === 0 || value.indexOf("qrc:/") === 0) return value
+    if (value.charAt(0) === "/") return Util.fileUrl(value)
+    if (value.indexOf("~/") === 0) return Util.fileUrl((Quickshell.env("HOME") || "") + value.slice(1))
+    return Quickshell.iconPath(value, true)
+  }
+
+  function overrideIcon(win) {
+    const appClass = String(win && win.appClass || "").trim()
+    const title = String(win && win.title || "").trim()
+    for (let i = 0; i < root.iconOverrides.length; i++) {
+      const override = root.iconOverrides[i]
+      if (!override || typeof override !== "object") continue
+      if (String(override.appClass || "").trim() !== appClass) continue
+      if (override.title !== undefined && String(override.title).trim() !== title) continue
+      const resolved = root.resolveIconSource(override.icon)
+      if (resolved) return resolved
+    }
+    return ""
+  }
+
+  function appIcon(win) {
+    const override = root.overrideIcon(win)
+    if (override) return override
+
+    const raw = String(win && win.appClass || "").trim()
     const entry = raw ? DesktopEntries.heuristicLookup(raw) : null
     const icon = entry ? String(entry.icon || "") : ""
 
@@ -179,9 +310,12 @@ Item {
       color: Color.menu.scrim
     }
 
+    // List style (default): the original list card. Workspace number, icon,
+    // app name, and window title per row.
     BorderSurface {
       id: card
 
+      visible: root.style === "list"
       width: root.cardWidth
       // BorderSurface exposes its padding as numbers rather than insetting its
       // children, so the rows below carry the same insets by hand and the card
@@ -248,7 +382,7 @@ Item {
               fillMode: Image.PreserveAspectFit
               sourceSize.width: width * Screen.devicePixelRatio
               sourceSize.height: height * Screen.devicePixelRatio
-              source: root.appIcon(modelData.appClass)
+              source: root.appIcon(modelData)
               asynchronous: true
             }
 
@@ -274,6 +408,79 @@ Item {
           }
         }
       }
+    }
+
+    // Bar style: one cell per window, the selected one highlighted.
+    Rectangle {
+      id: bar
+
+      visible: root.style === "bar"
+      width: root.barWidth
+      height: root.barHeight
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.verticalCenter: parent.verticalCenter
+      radius: root.barRadius
+      color: Color.menu.background
+
+      ListView {
+        id: barList
+
+        anchors.fill: parent
+        anchors.margins: root.barPadding
+        orientation: ListView.Horizontal
+        spacing: root.cellGap
+        clip: true
+        interactive: false
+        model: root.windows
+        currentIndex: root.selectedIndex
+        highlightMoveDuration: 0
+        // Keep the cursor on screen when there are more windows than fit.
+        preferredHighlightBegin: 0
+        preferredHighlightEnd: width
+        highlightRangeMode: ListView.ApplyRange
+
+        delegate: Item {
+          required property int index
+          required property var modelData
+
+          width: root.cellSize
+          height: root.cellSize
+
+          Rectangle {
+            anchors.fill: parent
+            radius: root.cellRadius
+            color: index === root.selectedIndex ? Util.alpha(Color.foreground, 0.18) : "transparent"
+          }
+
+          Image {
+            anchors.centerIn: parent
+            width: root.iconSize
+            height: root.iconSize
+            source: root.appIcon(modelData)
+            fillMode: Image.PreserveAspectFit
+            sourceSize.width: width * Screen.devicePixelRatio
+            sourceSize.height: height * Screen.devicePixelRatio
+            asynchronous: true
+            smooth: true
+          }
+        }
+      }
+    }
+
+    // Bar style: selected window's title, centred under the bar.
+    Text {
+      id: titleLabel
+
+      visible: root.style === "bar" && root.selectedTitle.length > 0
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: Math.round((parent.height + root.barHeight) / 2) + root.titleGap
+      width: Math.min(implicitWidth, parent.width - Style.space(48))
+      text: root.selectedTitle
+      color: Util.alpha(Color.menu.text, 0.9)
+      horizontalAlignment: Text.AlignHCenter
+      elide: Text.ElideRight
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.title
     }
   }
 }
