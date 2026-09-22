@@ -1,11 +1,11 @@
--- Windows-style ALT+TAB for Hyprland: cycle every window on every workspace,
--- most recently used first. Hold ALT, tap TAB to move down the list, release
+-- Windows-style ALT+TAB for Hyprland: cycle windows on the current workspace
+-- by default, most recently used first. Hold ALT, tap TAB to move down the list, release
 -- ALT to jump to the highlighted window. ALT+SHIFT+TAB moves back up, ESCAPE
 -- cancels.
 --
 -- Load it from ~/.config/hypr/bindings.lua:
 --
---   dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.altswitch/altswitch.lua")
+--   dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.makiwinster72.altswitch/altswitch.lua")
 --
 -- This half owns all the state and all the keys. The list is drawn by the
 -- companion shell plugin, which renders what it is told and nothing else.
@@ -16,7 +16,14 @@
 --   * Selection is virtual. Focus moves once, on commit. Focusing on every tap
 --     would drag you across workspaces on the way past.
 
-local altswitch = { windows = {}, index = 1, active = false }
+local altswitch = { windows = {}, candidates = {}, index = 1, active = false, workspace_name = "", effective_scope = "current" }
+
+-- Set `_G.altswitch_scope = "all"` before loading this file to include windows
+-- from every normal workspace. The fork defaults to the focused workspace.
+local altswitch_scope = tostring(rawget(_G, "altswitch_scope") or "current")
+if altswitch_scope ~= "current" and altswitch_scope ~= "all" then
+  altswitch_scope = "current"
+end
 
 -- Single-quote a string for the shell. Omarchy's config helpers provide this,
 -- but this file also has to work without them.
@@ -42,27 +49,55 @@ local function altswitch_json_string(value)
   return '"' .. escaped .. '"'
 end
 
+local function altswitch_candidates(scope)
+  local candidates = {}
+  for _, window in ipairs(altswitch.windows) do
+    local workspace = window.workspace
+    if scope == "all" or not workspace
+      or workspace.name == altswitch.workspace_name then
+      candidates[#candidates + 1] = window
+    end
+  end
+  return candidates
+end
+
+local function display_index(selected)
+  if not selected then return 0 end
+  local address = tostring(selected.address)
+  for index, window in ipairs(altswitch.windows) do
+    if tostring(window.address) == address then return index - 1 end
+  end
+  return 0
+end
+
 local function altswitch_payload()
   local rows = {}
   for _, window in ipairs(altswitch.windows) do
+    local workspace_name = window.workspace and window.workspace.name or ""
+    local in_scope = altswitch.effective_scope == "all" or workspace_name == altswitch.workspace_name
     rows[#rows + 1] = string.format(
-      '{"title":%s,"appClass":%s,"workspace":%s}',
+      '{"title":%s,"appClass":%s,"workspace":%s,"inScope":%s}',
       altswitch_json_string(window.title),
       altswitch_json_string(window.class),
-      altswitch_json_string(window.workspace and window.workspace.name or "")
+      altswitch_json_string(workspace_name),
+      tostring(in_scope)
     )
   end
 
   return string.format(
-    '{"windows":[%s],"index":%d}',
+    '{"windows":[%s],"index":%d,"scope":%s}',
     table.concat(rows, ","),
-    altswitch.index - 1 -- the plugin indexes from zero
+    display_index(altswitch.candidates[altswitch.index]),
+    altswitch_json_string(altswitch.effective_scope)
   )
 end
 
 local function altswitch_teardown()
   altswitch.active = false
   altswitch.windows = {}
+  altswitch.candidates = {}
+  altswitch.workspace_name = ""
+  altswitch.effective_scope = altswitch_scope
   altswitch_send("hide")
 end
 
@@ -71,19 +106,11 @@ local function altswitch_commit()
     return -- nothing in flight; the Alt release fires on every switch-less tap
   end
 
-  -- Read the address before tearing down. Teardown drops the snapshot, and the
-  -- window handles do not survive it: reading `.address` afterwards throws
-  -- inside the key callback, which silently loses the switch.
-  local target = altswitch.windows[altswitch.index]
+  local target = altswitch.candidates[altswitch.index]
   local address = target and target.address
 
   altswitch_teardown()
 
-  -- Dispatched out of process on purpose. Focusing directly from inside the key
-  -- callback updates Hyprland's idea of the active window but does not settle
-  -- until the next input event, so the switch looks like it did nothing until
-  -- you tap a key again. Going through hyprctl runs the same dispatcher from
-  -- outside the input callback, where it takes effect at once.
   if address then
     local focus = string.format('hl.dsp.focus({ window = "address:%s" })', address)
     hl.exec_cmd("hyprctl dispatch " .. shell_quote(focus))
@@ -103,22 +130,67 @@ local function altswitch_snapshot()
   return windows
 end
 
-local function altswitch_step(delta)
-  -- Already switching: just move the cursor, wrapping at both ends.
+-- Scope changes rebuild the selectable subset while all normal windows remain
+-- visible. The highlighted window is preserved when it is still selectable.
+_G.__altswitch_set_scope = function(scope)
+  local wanted = tostring(scope or "")
+  if wanted ~= "current" and wanted ~= "all" then return altswitch_scope end
+  if wanted == altswitch_scope then return altswitch_scope end
+
+  local selected = altswitch.candidates[altswitch.index]
+  local selected_address = selected and tostring(selected.address)
+  altswitch_scope = wanted
+
   if altswitch.active then
-    altswitch.index = (altswitch.index - 1 + delta) % #altswitch.windows + 1
-    altswitch_send("select", tostring(altswitch.index - 1))
+    altswitch.effective_scope = wanted
+    altswitch.candidates = altswitch_candidates(wanted)
+    if wanted == "current" and #altswitch.candidates < 2 then
+      altswitch.effective_scope = "all"
+      altswitch.candidates = altswitch_candidates("all")
+    end
+    if #altswitch.candidates < 2 then
+      altswitch_teardown()
+      return altswitch_scope
+    end
+
+    altswitch.index = 1
+    if selected_address then
+      for index, window in ipairs(altswitch.candidates) do
+        if tostring(window.address) == selected_address then
+          altswitch.index = index
+          break
+        end
+      end
+    end
+    altswitch_send("show", altswitch_payload())
+  end
+
+  return altswitch_scope
+end
+
+local function altswitch_step(delta)
+  if altswitch.active then
+    altswitch.index = (altswitch.index - 1 + delta) % #altswitch.candidates + 1
+    altswitch_send("select", tostring(display_index(altswitch.candidates[altswitch.index])))
     return
   end
 
+  local active_workspace = hl.get_active_workspace()
+  altswitch.workspace_name = active_workspace and active_workspace.name or ""
   altswitch.windows = altswitch_snapshot()
-  if #altswitch.windows < 2 then
-    return
+  local current_candidates = altswitch_candidates("current")
+  altswitch.effective_scope = altswitch_scope
+  if altswitch_scope == "current" and #current_candidates < 2 then
+    -- A workspace with fewer than two windows cannot switch locally; fall back
+    -- to the global list without changing the user's persisted preference.
+    altswitch.effective_scope = "all"
   end
+  altswitch.candidates = altswitch_candidates(altswitch.effective_scope)
+  if #altswitch.candidates < 2 then return end
 
-  -- Entry 1 is the window you are already on, so one tap has to land on entry 2
-  -- and one back-tap has to wrap to the oldest.
-  altswitch.index = delta % #altswitch.windows + 1
+  -- Entry 1 is the focused window, so one tap lands on entry 2. Reverse wraps
+  -- to the oldest selectable window. Out-of-scope rows remain visible but dim.
+  altswitch.index = delta % #altswitch.candidates + 1
   altswitch.active = true
   altswitch_send("show", altswitch_payload())
 end

@@ -30,8 +30,9 @@ Item {
   property bool opened: false
   property var windows: []
   property int selectedIndex: 0
+  property string activeWindowScope: "current"
 
-  readonly property string pluginId: String((manifest && manifest.id) || "io.github.pablo-merino.altswitch")
+  readonly property string pluginId: String((manifest && manifest.id) || "io.github.makiwinster72.altswitch")
   readonly property var pluginEntry: {
     const config = shell ? shell.shellConfig : null
     const plugins = config && Array.isArray(config.plugins) ? config.plugins : []
@@ -42,8 +43,14 @@ Item {
     return ({})
   }
   readonly property bool showIcons: pluginEntry.showIcons !== false
+  readonly property string windowScope: pluginEntry.scope === "all" ? "all" : "current"
 
   readonly property int rowHeight: Math.max(Style.space(34), Style.font.body + Style.spacing.controlPaddingY * 2)
+  readonly property int hintHeight: Style.space(28)
+  readonly property bool chineseLocale: String(Qt.locale().name).toLowerCase().indexOf("zh") === 0
+  readonly property string scopeHint: chineseLocale
+    ? (activeWindowScope === "current" ? "当前工作区 · 按 A 切换到全部工作区" : "全部工作区 · 按 A 切换到当前工作区")
+    : (activeWindowScope === "current" ? "Current workspace · Press A for all workspaces" : "All workspaces · Press A for current workspace")
   readonly property int cardWidth: Math.min(Style.space(560), panel.width - Style.gapsOut * 2)
   readonly property int maxCardHeight: panel.height - Style.gapsOut * 2
 
@@ -58,15 +65,32 @@ Item {
   }
 
   function setPluginSetting(name, rawValue) {
-    if (name !== "showIcons") return "unknown setting: " + name
-
     const value = String(rawValue || "").trim().toLowerCase()
-    if (value !== "true" && value !== "false") return "showIcons must be true or false"
 
-    const enabled = value === "true"
-    if (!root.updatePluginSetting(name, enabled)) return "unavailable"
-    return String(enabled)
+    if (name === "showIcons") {
+      if (value !== "true" && value !== "false") return "showIcons must be true or false"
+      const enabled = value === "true"
+      if (!root.updatePluginSetting(name, enabled)) return "unavailable"
+      return String(enabled)
+    }
+
+    if (name === "scope") {
+      if (value !== "current" && value !== "all") return "scope must be current or all"
+      if (!root.updatePluginSetting(name, value)) return "unavailable"
+      return value
+    }
+
+    return "unknown setting: " + name
   }
+
+  function syncWindowScope() {
+    Quickshell.execDetached([
+      "hyprctl", "eval", "__altswitch_set_scope(" + JSON.stringify(root.windowScope) + ")"
+    ])
+  }
+
+  onWindowScopeChanged: syncWindowScope()
+  Component.onCompleted: syncWindowScope()
 
   function friendlyAppName(appClass) {
     const raw = String(appClass || "").trim()
@@ -109,6 +133,7 @@ Item {
 
     root.windows = payload.windows || []
     root.selectedIndex = payload.index || 0
+    root.activeWindowScope = payload.scope === "all" ? "all" : "current"
     root.opened = root.windows.length > 0
   }
 
@@ -159,6 +184,14 @@ Item {
     function set(name: string, value: string): string {
       return root.setPluginSetting(name, value)
     }
+
+    function scope(value: string): string {
+      const requested = String(value || "").trim().toLowerCase()
+      const wanted = requested === "toggle"
+        ? (root.windowScope === "current" ? "all" : "current")
+        : requested
+      return root.setPluginSetting("scope", wanted)
+    }
   }
 
   PanelWindow {
@@ -189,7 +222,7 @@ Item {
       // last row.
       height: Math.min(
         root.maxCardHeight,
-        root.windows.length * root.rowHeight + card.contentTopInset + card.contentBottomInset
+        root.windows.length * root.rowHeight + root.hintHeight + card.contentTopInset + card.contentBottomInset
       )
       anchors.centerIn: parent
       radius: Style.cornerRadius
@@ -202,7 +235,7 @@ Item {
 
         anchors.fill: parent
         anchors.topMargin: card.contentTopInset
-        anchors.bottomMargin: card.contentBottomInset
+        anchors.bottomMargin: card.contentBottomInset + root.hintHeight
         anchors.leftMargin: card.contentLeftInset
         anchors.rightMargin: card.contentRightInset
         clip: true
@@ -223,6 +256,7 @@ Item {
           height: root.rowHeight
           radius: Style.cornerRadius
           color: index === root.selectedIndex ? Color.menu.selectedBackground : "transparent"
+          opacity: modelData.inScope === false ? 0.32 : 1.0
 
           RowLayout {
             anchors.fill: parent
@@ -273,6 +307,23 @@ Item {
             }
           }
         }
+      }
+
+      Text {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: card.contentLeftInset
+        anchors.rightMargin: card.contentRightInset
+        anchors.bottomMargin: card.contentBottomInset
+        height: root.hintHeight
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        text: root.scopeHint
+        color: Color.menu.text
+        opacity: 0.58
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.caption
       }
     }
   }

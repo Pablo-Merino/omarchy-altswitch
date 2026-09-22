@@ -1,7 +1,7 @@
 # Alt-tab switcher
 
-Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles every
-window on every workspace, ordered by most recently used.
+Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles windows
+on the current workspace, ordered by most recently used.
 
 Hold `ALT`, tap `TAB` to move down the list, release `ALT` to jump to the
 highlighted window.
@@ -15,6 +15,7 @@ highlighted window.
 | `ALT`+`TAB` | Open the switcher and select the previous window |
 | `ALT`+`TAB` again, `ALT` still held | Move one further down the list |
 | `ALT`+`SHIFT`+`TAB` | Move back up the list |
+| Hold `ALT`, release `TAB`, then press `A` | Toggle current-workspace/global scope immediately |
 | Release `ALT` | Switch to the highlighted window |
 | `ALT`+`ESCAPE` | Cancel without switching |
 
@@ -26,7 +27,11 @@ Two things make this behave like Windows rather than like Hyprland's
 - Selection is virtual. Focus moves once, when you release `ALT`. Focusing on
   every tap would drag you across workspaces on the way past.
 
-Special and scratchpad workspaces are excluded. Every monitor is included.
+Special and scratchpad workspaces are excluded. In current-workspace mode,
+all normal windows stay visible, but rows from other workspaces are dimmed and
+skipped by keyboard selection. Global mode makes every row selectable. A hint
+in the system language (Chinese or English) shows the active scope and the
+`A` toggle while the switcher is open.
 
 ## Requirements
 
@@ -40,16 +45,24 @@ No other dependencies, and nothing to install beyond this repository.
 Add the plugin and enable it:
 
 ```bash
-omarchy plugin add https://github.com/Pablo-Merino/omarchy-altswitch.git --enable
+omarchy plugin add https://github.com/MakiWinster72/omarchy-altswitch.git --enable
 ```
 
 Then load the keybindings from `~/.config/hypr/bindings.lua`:
 
 ```lua
-dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.altswitch/altswitch.lua")
+dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.makiwinster72.altswitch/altswitch.lua")
+o.bind("ALT + A", "Toggle Alt-Tab workspace scope", "omarchy-shell altswitch scope toggle")
 ```
 
-Apply it with `hyprctl reload`.
+Open the switcher with `ALT`+`TAB`, keep holding `ALT`, release `TAB`, then
+press `A` to switch the visible list immediately between current-workspace and
+global mode.
+
+The fork defaults to the current workspace when it has at least two windows.
+With zero or one window there, it falls back to the global list automatically.
+Scope can be changed at runtime and persists in `~/.config/omarchy/shell.json`;
+no Hyprland reload is needed.
 
 That line replaces Omarchy's four default `ALT`+`TAB` bindings (`cyclenext` and
 `bring_to_top`, in both directions). It unbinds them itself, so no other edit is
@@ -67,14 +80,19 @@ omarchy-shell altswitch set showIcons false
 | --- | --- |
 | `omarchy-shell altswitch set showIcons true` | Show application icons |
 | `omarchy-shell altswitch set showIcons false` | Hide application icons |
+| `omarchy-shell altswitch scope current` | Switch only within the current workspace |
+| `omarchy-shell altswitch scope all` | Switch across every normal workspace |
+| `omarchy-shell altswitch scope toggle` | Toggle between current and all |
 
 Changes apply immediately and persist in the plugin's entry in
-`~/.config/omarchy/shell.json`.
+`~/.config/omarchy/shell.json`. While holding `ALT` after opening the switcher,
+pressing the bound scope-toggle key updates selection and row emphasis
+immediately.
 
 The equivalent manual setting is:
 
 ```json
-{ "id": "io.github.pablo-merino.altswitch", "showIcons": true }
+{ "id": "io.github.makiwinster72.altswitch", "showIcons": true, "scope": "current" }
 ```
 
 ## Remove
@@ -83,7 +101,7 @@ Delete the `dofile` line from `~/.config/hypr/bindings.lua`, then:
 
 ```bash
 hyprctl reload
-omarchy plugin remove io.github.pablo-merino.altswitch
+omarchy plugin remove io.github.makiwinster72.altswitch
 ```
 
 Omarchy's default `ALT`+`TAB` bindings come back on the next reload.
