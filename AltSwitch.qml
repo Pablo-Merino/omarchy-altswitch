@@ -68,13 +68,31 @@ Item {
     return String(enabled)
   }
 
+  // Chromium --app windows get a class like "chrome-mail.google.com__-Default",
+  // which matches no desktop file. Recover the host and find the webapp entry
+  // whose Exec opens it (e.g. omarchy-launch-webapp "https://mail.google.com").
+  function desktopEntryFor(raw) {
+    const entry = DesktopEntries.heuristicLookup(raw)
+    if (entry) return entry
+
+    const match = raw.match(/^(?:chrome|chromium|brave|msedge)-(.+?)__.*-(?:Default|Profile_\d+)$/)
+    if (!match) return null
+    const host = match[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const opens = new RegExp("//" + host + "(?![\\w.-])")
+    const apps = DesktopEntries.applications.values
+    for (let i = 0; i < apps.length; i++) {
+      if (opens.test(String(apps[i].execString || ""))) return apps[i]
+    }
+    return null
+  }
+
   function friendlyAppName(appClass) {
     const raw = String(appClass || "").trim()
     if (!raw) return "Unknown"
 
     // Window classes usually match a desktop-file id or StartupWMClass.
     // Let Quickshell resolve both before falling back to formatting the id.
-    const entry = DesktopEntries.heuristicLookup(raw)
+    const entry = root.desktopEntryFor(raw)
     if (entry && entry.name) return String(entry.name)
 
     let name = raw.replace(/^steam_app_/i, "")
@@ -85,7 +103,7 @@ Item {
 
   function appIcon(appClass) {
     const raw = String(appClass || "").trim()
-    const entry = raw ? DesktopEntries.heuristicLookup(raw) : null
+    const entry = raw ? root.desktopEntryFor(raw) : null
     const icon = entry ? String(entry.icon || "") : ""
 
     if (icon.indexOf("file://") === 0 || icon.indexOf("image://") === 0) return icon
