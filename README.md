@@ -15,6 +15,7 @@ highlighted window.
 | `ALT`+`TAB` | Open the switcher and select the previous window |
 | `ALT`+`TAB` again, `ALT` still held | Move one further down the list |
 | `ALT`+`SHIFT`+`TAB` | Move back up the list |
+| `ALT`+`DOWN`/`RIGHT`, `ALT`+`UP`/`LEFT` | Move down / up the list (only while it is open; otherwise these chords reach the focused window as usual) |
 | Release `ALT` | Switch to the highlighted window |
 | `ALT`+`ESCAPE` | Cancel without switching |
 

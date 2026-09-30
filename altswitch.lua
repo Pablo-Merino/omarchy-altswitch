@@ -1,7 +1,7 @@
 -- Windows-style ALT+TAB for Hyprland: cycle every window on every workspace,
 -- most recently used first. Hold ALT, tap TAB to move down the list, release
--- ALT to jump to the highlighted window. ALT+SHIFT+TAB moves back up, ESCAPE
--- cancels.
+-- ALT to jump to the highlighted window. ALT+SHIFT+TAB moves back up, the
+-- arrow keys (ALT still held) move either way, ESCAPE cancels.
 --
 -- Load it from ~/.config/hypr/bindings.lua:
 --
@@ -17,6 +17,15 @@
 --     would drag you across workspaces on the way past.
 
 local altswitch = { windows = {}, index = 1, active = false }
+
+-- ALT+arrow binds, enabled only while a switch is up (see the bottom of the file).
+local altswitch_arrow_binds = {}
+
+local function altswitch_arrows(enabled)
+  for _, bind in ipairs(altswitch_arrow_binds) do
+    bind:set_enabled(enabled)
+  end
+end
 
 -- Single-quote a string for the shell. Omarchy's config helpers provide this,
 -- but this file also has to work without them.
@@ -62,6 +71,7 @@ end
 
 local function altswitch_teardown()
   altswitch.active = false
+  altswitch_arrows(false)
   altswitch.windows = {}
   altswitch_send("hide")
 end
@@ -120,6 +130,7 @@ local function altswitch_step(delta)
   -- and one back-tap has to wrap to the oldest.
   altswitch.index = delta % #altswitch.windows + 1
   altswitch.active = true
+  altswitch_arrows(true)
   altswitch_send("show", altswitch_payload())
 end
 
@@ -135,6 +146,20 @@ hl.unbind("ALT + SHIFT + TAB")
 hl.bind("ALT + TAB", function() altswitch_step(1) end, { description = "Switch window" })
 hl.bind("ALT + SHIFT + TAB", function() altswitch_step(-1) end, { description = "Switch window (reverse)" })
 hl.bind("ALT + ESCAPE", altswitch_teardown, { non_consuming = true, description = "Cancel window switch" })
+
+-- ALT+arrows move the selection while the list is open: UP/LEFT back, DOWN/RIGHT
+-- forward. Applications use these chords too (ALT+LEFT is Back in browsers), so
+-- the binds are only enabled for the duration of a switch and pass through to
+-- the focused window the rest of the time.
+local ARROW_STEPS = { UP = -1, LEFT = -1, DOWN = 1, RIGHT = 1 }
+
+for key, delta in pairs(ARROW_STEPS) do
+  local bind = hl.bind("ALT + " .. key, function() altswitch_step(delta) end, {
+    description = "Move window switch selection",
+  })
+  bind:set_enabled(false)
+  altswitch_arrow_binds[#altswitch_arrow_binds + 1] = bind
+end
 
 -- Committing on ALT release cannot be a keybind. A release bind on a modifier
 -- only fires when that modifier is tapped on its own; pressing TAB in between
